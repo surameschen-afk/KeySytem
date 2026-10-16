@@ -36,12 +36,13 @@ button:active{transform:scale(.96)}
 .st b{display:block;font-size:20px}.st small{color:var(--mu);font-size:11px}
 .k{padding:12px 0;border-top:1px solid var(--bd);font-size:12px;word-break:break-all}
 .k:first-child{border-top:0}.k code{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;font-weight:700}
-.tg{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;margin-left:4px}
+.tg{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;margin:2px 0 0 4px}
 .tg.o{background:rgba(0,209,160,.18);color:var(--ok)}.tg.e{background:rgba(255,93,115,.18);color:var(--er)}.tg.y{background:rgba(243,156,18,.2);color:#f5b041}.tg.p{background:rgba(108,92,231,.25);color:#a29bfe}
+.tg .x{cursor:pointer;margin-left:4px;font-weight:700}
 .ac{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .out{margin-top:10px;padding:10px;background:rgba(0,0,0,.35);border-radius:12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;white-space:pre-wrap;word-break:break-all;animation:in .3s both}
 .nav{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:6px;padding:10px 10px max(10px,env(safe-area-inset-bottom));background:rgba(11,13,20,.8);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-top:1px solid var(--bd)}
-.nav button{background:transparent;color:var(--mu);flex:1;max-width:110px;font-size:12px;padding:8px 2px}
+.nav button{background:transparent;color:var(--mu);flex:1;max-width:90px;font-size:11px;padding:8px 2px}
 .nav button.on{color:#fff;background:color-mix(in srgb,var(--ac) 35%,transparent)}
 .lg{font-size:12px;padding:8px 0;border-top:1px solid var(--bd);display:flex;gap:8px;word-break:break-all}
 .lg small{color:var(--mu)}
@@ -72,20 +73,27 @@ button:active{transform:scale(.96)}
 <div><label>หน่วย</label><select id="unit"><option value="1">นาที</option><option value="60" selected>ชั่วโมง</option><option value="1440">วัน</option><option value="0">♾️ ถาวร</option></select></div>
 <div><label>จำนวน</label><input id="cnt" type="number" min="1" max="50" value="1"></div></div>
 <small style="color:var(--mu);display:block;margin-top:6px">⏸ เวลาจะเริ่มนับเมื่อมีคนใช้คีย์สำเร็จครั้งแรก</small>
+<label>🆔 ไอดีโรบอคที่อนุญาต (ไม่ใส่ = ใครก็ใช้ได้ แล้วผูกคนแรก · ใส่หลายไอดีคั่นด้วย , )</label><input id="ids" inputmode="numeric" placeholder="เช่น 123456789, 987654321">
 <label>โน้ต (เช่น ชื่อลูกค้า)</label><input id="note" maxlength="60">
 <button class="b" id="gen">สร้างคีย์</button><div id="res"></div></div></div>
 
 <div class="pn" id="p-keys"><div class="g"><h3>📋 คีย์ทั้งหมด</h3>
-<div class="row"><input id="q" placeholder="ค้นหาคีย์/โน้ต"><select id="f"><option value="all">ทั้งหมด</option><option value="free">ยังไม่ผูก</option><option value="bound">ผูกแล้ว</option><option value="ban">ถูกแบน</option></select></div>
+<div class="row"><input id="q" placeholder="ค้นหาคีย์/โน้ต/ไอดี"><select id="f"><option value="all">ทั้งหมด</option><option value="free">ยังไม่ผูก</option><option value="bound">ผูกแล้ว</option><option value="ban">ถูกแบน</option><option value="noid">ไม่มีไอดีล็อก</option></select></div>
 <button class="s gh b" id="cpall">คัดลอกคีย์ที่แสดงทั้งหมด</button><div id="list" style="margin-top:6px"></div></div></div>
+
+<div class="pn" id="p-bl"><div class="g"><h3>🚫 แบนไอดีโรบอค</h3><small style="color:var(--mu)">ไอดีในรายการนี้ใช้ไม่ได้ทุกคีย์ (ใส่หลายไอดีคั่นด้วย , ได้)</small>
+<label>ไอดีโรบอค</label><input id="blid" inputmode="numeric" placeholder="เช่น 123456789">
+<label>เหตุผล (ไม่บังคับ)</label><input id="blrs" maxlength="60">
+<button class="b rd" id="bladd">แบนไอดีนี้</button><div id="bllist" style="margin-top:10px"></div></div></div>
 
 <div class="pn" id="p-scr"><div class="g"><h3>📜 สคริปต์หลัก</h3><small style="color:var(--mu)">เก็บบนเซิร์ฟเวอร์ ส่งให้เฉพาะคีย์ที่ถูกต้อง</small>
 <textarea id="script" style="margin-top:8px"></textarea><div style="text-align:right;font-size:11px;color:var(--mu)" id="cc"></div>
 <button class="b" id="sv">บันทึกสคริปต์</button></div></div>
 
-<div class="pn" id="p-log"><div class="g"><div class="top"><h3>🧾 ประวัติ</h3><button class="s rd" id="clr">ล้าง</button></div><div id="logs"></div></div></div>
+<div class="pn" id="p-log"><div class="g"><div class="top"><h3>🧾 ประวัติ</h3><div class="dots"><button class="s gh" id="bk">💾 สำรอง</button><button class="s rd" id="clr">ล้าง</button></div></div>
+<small id="inf" style="color:var(--mu);display:block;margin-bottom:6px"></small><div id="logs"></div></div></div>
 
-<div class="nav"><button class="on" data-t="gen">✨<br>สร้าง</button><button data-t="keys">📋<br>คีย์</button><button data-t="scr">📜<br>สคริปต์</button><button data-t="log">🧾<br>ประวัติ</button></div>
+<div class="nav"><button class="on" data-t="gen">✨<br>สร้าง</button><button data-t="keys">📋<br>คีย์</button><button data-t="bl">🚫<br>แบนไอดี</button><button data-t="scr">📜<br>สคริปต์</button><button data-t="log">🧾<br>ประวัติ</button></div>
 </div>
 
 <script>
@@ -112,18 +120,22 @@ function api(path,body){return fetch("/admin/api/"+path,{method:body?"POST":"GET
 function copy(t){try{navigator.clipboard.writeText(t);toast("คัดลอกแล้ว ✓","ok")}catch(e){toast("คัดลอกไม่ได้","er")}}
 function scr(k){return 'getgenv().Key = "'+k+'"\nloadstring(game:HttpGet("'+location.origin+'/loader.lua"))()'}
 function fmt(ms){if(ms<=0)return"หมดอายุ";var s=Math.floor(ms/1000),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return(d?d+"ว ":"")+(h?h+"ช ":"")+m+"น "+(s%60)+"ว"}
+/* ผลลัพธ์จากเซิร์ฟเวอร์: ok หรือ error */
+function chk(m){return function(d){if(d&&d.ok===false){toast(d.error||"ผิดพลาด","er");return}toast(m,"ok");load()}}
 /* โหลดข้อมูล */
 function load(){return api("list").then(function(d){D=d;$("login").style.display="none";$("app").style.display="block";
  if(first){$("script").value=d.script;cc();first=false}
- $("s1").textContent=d.keys.length;$("s2").textContent=d.keys.filter(function(k){return k.hwid}).length;$("s3").textContent=d.keys.filter(function(k){return k.banned}).length;$("s4").textContent=d.keys.reduce(function(a,k){return a+k.uses},0);
- renderList();renderLogs()}).catch(function(e){if(!D){$("login").firstChild.classList.add("shake");setTimeout(function(){$("login").firstChild.classList.remove("shake")},500);toast(e.message,"er")}})}
-function shown(){var q=$("q").value.toLowerCase(),f=$("f").value;return D.keys.filter(function(k){if(q&&(k.key.toLowerCase().indexOf(q)<0&&k.note.toLowerCase().indexOf(q)<0))return false;if(f==="free")return!k.hwid;if(f==="bound")return!!k.hwid;if(f==="ban")return k.banned;return true})}
+ $("s1").textContent=d.keys.length;$("s2").textContent=d.keys.filter(function(k){return k.hwid||k.ids.length}).length;$("s3").textContent=d.keys.filter(function(k){return k.banned}).length;$("s4").textContent=d.keys.reduce(function(a,k){return a+k.uses},0);
+ $("inf").textContent="โหมดผูก: "+({uid:"ไอดีโรบอค",ip:"IP",hwid:"HWID"}[d.bind]||d.bind)+" · Webhook: "+(d.webhook?"เปิด":"ปิด");
+ renderList();renderBl();renderLogs()}).catch(function(e){if(!D){$("login").firstChild.classList.add("shake");setTimeout(function(){$("login").firstChild.classList.remove("shake")},500);toast(e.message,"er")}})}
+function shown(){var q=$("q").value.toLowerCase(),f=$("f").value;return D.keys.filter(function(k){if(q&&(k.key.toLowerCase().indexOf(q)<0&&k.note.toLowerCase().indexOf(q)<0&&k.ids.join(" ").indexOf(q)<0&&String(k.hwid||"").toLowerCase().indexOf(q)<0))return false;if(f==="free")return!k.hwid&&!k.ids.length;if(f==="bound")return!!k.hwid||k.ids.length>0;if(f==="ban")return k.banned;if(f==="noid")return!k.ids.length;return true})}
 function timeTxt(k){if(k.perm)return'♾️ ถาวร';if(!k.exp)return'⏸ ยังไม่เริ่มนับ ('+fmt(k.dur*60000).replace(/ \d+ว$/,"")+')';return'⏳ <span class="cd" data-e="'+k.exp+'"></span>'}
-function renderList(){if(!D)return;var a=shown();$("list").innerHTML=a.length?a.map(function(k){return'<div class="k"><code>'+k.key+'</code>'+(k.banned?'<span class="tg e">แบน</span>':'')+(k.perm?'<span class="tg p">ถาวร</span>':!k.exp?'<span class="tg y">รอเริ่มนับ</span>':'')+'<span class="tg '+(k.hwid?'o':'y')+'">'+(k.hwid?'ผูกแล้ว':'ยังไม่ผูก')+'</span>'+(k.note?'<div>📝 '+esc(k.note)+'</div>':'')+'<div style="color:var(--mu)">'+timeTxt(k)+' · ใช้ '+k.uses+' ครั้ง'+(k.last?' · ล่าสุด '+new Date(k.last).toLocaleString("th-TH"):'')+'</div>'+(k.hwid?'<div style="color:var(--mu)">ผูกกับ: '+esc(k.hwid.slice(0,40))+'</div>':'')+'<div class="ac" data-k="'+k.key+'"><button class="s gr" data-a="cp">คัดลอก</button>'+(k.perm?'':'<button class="s gh" data-a="h">+1ชม</button><button class="s gh" data-a="d">+1วัน</button>')+'<button class="s or" data-a="rs">รีเซ็ตการผูก</button><button class="s gh" data-a="bn">'+(k.banned?'ปลดแบน':'แบน')+'</button><button class="s rd" data-a="dl">ลบ</button></div></div>'}).join(""):'<small style="color:var(--mu)">ไม่พบคีย์</small>';tick()}
-var ic={create:"➕",bind:"🔗",use:"✅",fail:"❌",hwid:"⚠️",ban:"⛔",start:"⏱️"};
+function renderList(){if(!D)return;var a=shown();$("list").innerHTML=a.length?a.map(function(k){var bound=k.hwid||k.ids.length;return'<div class="k" data-k="'+k.key+'"><code>'+k.key+'</code>'+(k.banned?'<span class="tg e">แบน</span>':'')+(k.perm?'<span class="tg p">ถาวร</span>':!k.exp?'<span class="tg y">รอเริ่มนับ</span>':'')+'<span class="tg '+(bound?'o':'y')+'">'+(bound?'ผูกแล้ว':'ยังไม่ผูก')+'</span>'+(k.note?'<div>📝 '+esc(k.note)+'</div>':'')+(k.ids.length?'<div>'+k.ids.map(function(i){return'<span class="tg p">🆔 '+i+'<span class="x" data-a="ri" data-i="'+i+'">✕</span></span>'}).join("")+'</div>':'')+'<div style="color:var(--mu)">'+timeTxt(k)+' · ใช้ '+k.uses+' ครั้ง'+(k.last?' · ล่าสุด '+new Date(k.last).toLocaleString("th-TH"):'')+'</div>'+(k.lastUid?'<div style="color:var(--mu)">ไอดีล่าสุดที่ใช้: '+esc(k.lastUid)+'</div>':'')+(k.hwid&&!k.ids.length?'<div style="color:var(--mu)">ผูกกับ: '+esc(k.hwid.slice(0,40))+'</div>':'')+'<div class="ac"><button class="s gr" data-a="cp">คัดลอก</button><button class="s gh" data-a="ai">➕ ไอดี</button><button class="s gh" data-a="nt">📝 โน้ต</button>'+(k.perm?'':'<button class="s gh" data-a="h">+1ชม</button><button class="s gh" data-a="d">+1วัน</button>')+'<button class="s or" data-a="rs">รีเซ็ตการผูก</button><button class="s gh" data-a="bn">'+(k.banned?'ปลดแบน':'แบน')+'</button>'+(k.lastUid?'<button class="s rd" data-a="bu">🚫 แบนไอดีล่าสุด</button>':'')+'<button class="s rd" data-a="dl">ลบ</button></div></div>'}).join(""):'<small style="color:var(--mu)">ไม่พบคีย์</small>';tick()}
+function renderBl(){var a=D.blacklist||[];$("bllist").innerHTML=a.length?a.map(function(b){return'<div class="lg"><span>🚫</span><div style="flex:1"><b>'+esc(b.id)+'</b>'+(b.reason?' · '+esc(b.reason):'')+'<br><small>'+new Date(b.t).toLocaleString("th-TH")+'</small></div><button class="s gh" data-id="'+esc(b.id)+'">ปลดแบน</button></div>'}).join(""):'<small style="color:var(--mu)">ยังไม่มีไอดีที่ถูกแบน</small>'}
+var ic={create:"➕",bind:"🔗",use:"✅",fail:"❌",hwid:"⚠️",ban:"⛔",start:"⏱️",block:"🚫",addid:"🆔"};
 function renderLogs(){$("logs").innerHTML=D.logs.length?D.logs.map(function(l){return'<div class="lg"><span>'+(ic[l.type]||"•")+'</span><div><b>'+esc(l.key)+'</b> '+esc(l.info)+'<br><small>'+new Date(l.t).toLocaleString("th-TH")+'</small></div></div>'}).join(""):'<small style="color:var(--mu)">ยังไม่มีประวัติ</small>'}
 function tick(){var n=Date.now();document.querySelectorAll(".cd").forEach(function(e){e.textContent=fmt(Number(e.dataset.e)-n)})}
-setInterval(tick,1000);setInterval(function(){if(D&&!document.hidden)load()},20000);
+setInterval(tick,1000);setInterval(function(){if(D&&!document.hidden&&!document.activeElement.matches("input,textarea,select"))load()},20000);
 /* เหตุการณ์ */
 $("go").onclick=function(){sfx.click();PW=$("pw").value;sessionStorage.setItem("pw",PW);load()};
 $("pw").onkeydown=function(e){if(e.key==="Enter")$("go").click()};
@@ -132,24 +144,31 @@ $("snd").onclick=function(){snd=!snd;ls("snd",snd?"1":"0");$("snd").textContent=
 document.querySelectorAll(".dot").forEach(function(b){b.onclick=function(){setAc(b.dataset.c);sfx.click()}});
 document.querySelectorAll(".nav button").forEach(function(b){b.onclick=function(){sfx.tab();document.querySelectorAll(".nav button").forEach(function(x){x.classList.remove("on")});b.classList.add("on");document.querySelectorAll(".pn").forEach(function(p){p.classList.remove("on")});$("p-"+b.dataset.t).classList.add("on")}});
 $("unit").onchange=function(){$("dur").disabled=$("unit").value==="0"};
-$("gen").onclick=function(){sfx.click();var perm=$("unit").value==="0";api("create",{name:$("name").value,count:Number($("cnt").value),perm:perm,minutes:perm?0:Number($("dur").value)*Number($("unit").value),note:$("note").value}).then(function(d){
+$("gen").onclick=function(){sfx.click();var perm=$("unit").value==="0";api("create",{name:$("name").value,count:Number($("cnt").value),perm:perm,minutes:perm?0:Number($("dur").value)*Number($("unit").value),note:$("note").value,ids:$("ids").value}).then(function(d){
  $("res").innerHTML=d.keys.map(function(k){return'<div class="out">'+esc(scr(k))+'<button class="s gr" style="margin-top:8px;width:100%" data-c="'+k+'">คัดลอกสคริปต์</button></div>'}).join("")+(d.keys.length>1?'<button class="b gh" id="cpk">คัดลอกคีย์ทั้งหมด ('+d.keys.length+')</button>':'');
  if($("cpk"))$("cpk").onclick=function(){copy(d.keys.join("\n"))};
  confetti();toast("สร้าง "+d.keys.length+" คีย์สำเร็จ 🎉","ok");load()}).catch(function(e){toast(e.message,"er")})};
 $("res").onclick=function(e){var k=e.target.dataset&&e.target.dataset.c;if(k)copy(scr(k))};
 $("q").oninput=renderList;$("f").onchange=renderList;
 $("cpall").onclick=function(){if(!D)return;var a=shown().map(function(k){return k.key});copy(a.join("\n"))};
-$("list").onclick=function(e){var b=e.target.closest("button");if(!b)return;var k=b.parentNode.dataset.k,a=b.dataset.a;sfx.click();
+$("list").onclick=function(e){var t=e.target.closest("[data-a]");if(!t)return;var row=t.closest(".k"),k=row.dataset.k,a=t.dataset.a,rec=D.keys.filter(function(x){return x.key===k})[0];sfx.click();
  var done=function(m){return function(){toast(m,"ok");load()}};
  if(a==="cp")copy(scr(k));
  else if(a==="h")api("extend",{key:k,minutes:60}).then(done("ต่อเวลา 1 ชั่วโมง"));
  else if(a==="d")api("extend",{key:k,minutes:1440}).then(done("ต่อเวลา 1 วัน"));
  else if(a==="rs")api("reset",{key:k}).then(done("รีเซ็ตการผูกแล้ว"));
  else if(a==="bn")api("ban",{key:k}).then(done("อัปเดตสถานะแล้ว"));
+ else if(a==="ai"){var v=prompt("ไอดีโรบอคที่จะเพิ่ม (หลายไอดีคั่นด้วย , )");if(v)api("addid",{key:k,id:v}).then(chk("เพิ่มไอดีแล้ว"))}
+ else if(a==="ri"){if(confirm("ลบไอดี "+t.dataset.i+" ออกจากคีย์นี้?"))api("rmid",{key:k,id:t.dataset.i}).then(done("ลบไอดีแล้ว"))}
+ else if(a==="nt"){var n=prompt("โน้ตของคีย์",rec?rec.note:"");if(n!==null)api("note",{key:k,note:n}).then(done("แก้โน้ตแล้ว"))}
+ else if(a==="bu"){if(rec&&confirm("แบนไอดี "+rec.lastUid+" ทุกคีย์?"))api("blacklist",{id:rec.lastUid,reason:"จากคีย์ "+k}).then(chk("แบนไอดีแล้ว"))}
  else if(a==="dl"&&confirm("ลบคีย์ "+k+" ?"))api("delete",{key:k}).then(done("ลบแล้ว"))};
+$("bladd").onclick=function(){sfx.click();api("blacklist",{id:$("blid").value,reason:$("blrs").value}).then(function(d){if(d.ok===false){toast(d.error,"er");return}$("blid").value="";$("blrs").value="";toast("แบนไอดีแล้ว","ok");load()})};
+$("bllist").onclick=function(e){var b=e.target.closest("button");if(!b)return;sfx.click();api("blacklist",{id:b.dataset.id,remove:true}).then(function(){toast("ปลดแบนแล้ว","ok");load()})};
 function cc(){$("cc").textContent=$("script").value.length+" ตัวอักษร"}
 $("script").oninput=cc;
 $("sv").onclick=function(){sfx.click();api("script",{script:$("script").value}).then(function(){toast("บันทึกสคริปต์แล้ว","ok")}).catch(function(e){toast(e.message,"er")})};
 $("clr").onclick=function(){if(confirm("ล้างประวัติทั้งหมด?"))api("clearlogs",{}).then(function(){toast("ล้างแล้ว","ok");load()})};
+$("bk").onclick=function(){if(!D)return;var blob=new Blob([JSON.stringify({keys:D.keys,blacklist:D.blacklist,script:D.script},null,1)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="keys-backup-"+new Date().toISOString().slice(0,10)+".json";a.click();toast("ดาวน์โหลดไฟล์สำรองแล้ว","ok")};
 if(PW)load();
 </script></body></html>
