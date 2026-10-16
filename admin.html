@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="th"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ระบบคีย์</title>
+<style>
+:root{--bg:#f4f4f8;--card:#fff;--text:#1c1c28;--mute:#6b6b80;--box:#eeeef5}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1117;--card:#1a1d27;--text:#e8e8ee;--mute:#9a9ab0;--box:#0f1117}}
+*{box-sizing:border-box}body{margin:0;padding:14px;background:var(--bg);color:var(--text);font-family:system-ui,sans-serif}
+.card{background:var(--card);padding:18px;border-radius:16px;max-width:460px;margin:0 auto 14px}
+h3{margin:0 0 8px}label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mute)}
+input,select,textarea{width:100%;padding:12px;font-size:16px;border:0;border-radius:10px;background:var(--box);color:var(--text)}
+textarea{height:130px;font-family:monospace;font-size:13px}
+button{width:100%;background:#6c5ce7;color:#fff;border:0;border-radius:10px;padding:13px;font-size:16px;margin-top:10px}
+.g{background:#00a884}.r{background:#d63031;width:auto;padding:6px 12px;font-size:13px;margin:0}
+.row{display:flex;gap:8px}.row input{flex:1.2}.row select{flex:1}
+.out{margin-top:10px;padding:12px;background:var(--box);border-radius:10px;font-family:monospace;font-size:13px;white-space:pre-wrap;word-break:break-all}
+.k{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--box);font-size:12px;word-break:break-all}
+small{color:var(--mute)}
+</style></head><body>
+<div class="card" id="login"><h3>🔐 เข้าสู่ระบบแอดมิน</h3>
+<input id="pw" type="password" placeholder="ADMIN_PASSWORD"><button id="go">เข้าสู่ระบบ</button><small id="err"></small></div>
+
+<div id="app" style="display:none">
+<div class="card"><h3>🔑 สร้างคีย์</h3>
+<label>ชื่อคีย์</label><input id="name" value="MY-SECRET-KEY">
+<label>เวลาของคีย์</label>
+<div class="row"><input id="dur" type="number" min="1" value="24"><select id="unit"><option value="1">นาที</option><option value="60" selected>ชั่วโมง</option><option value="1440">วัน</option></select></div>
+<button id="gen">สร้างคีย์</button>
+<div class="out" id="out" style="display:none"></div>
+<button class="g" id="cp" style="display:none">คัดลอกสคริปต์</button></div>
+
+<div class="card"><h3>📜 สคริปต์หลัก (เก็บบนเซิร์ฟเวอร์)</h3>
+<small>วางโค้ด Lua ของคุณ ระบบจะส่งให้เฉพาะคีย์ที่ถูกต้อง</small>
+<textarea id="script"></textarea><button id="sv">บันทึกสคริปต์</button></div>
+
+<div class="card"><h3>📋 คีย์ทั้งหมด</h3><div id="list"></div></div>
+</div>
+<script>
+var $=function(i){return document.getElementById(i);};
+var PW=sessionStorage.getItem("pw")||"";
+function api(path,body){
+  return fetch("/admin/api/"+path,{method:body?"POST":"GET",headers:{"x-admin":PW,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined}).then(function(r){if(r.status===401)throw new Error("รหัสไม่ถูกต้อง");return r.json();});
+}
+function load(){
+  return api("list").then(function(d){
+    $("login").style.display="none";$("app").style.display="block";
+    $("script").value=d.script;
+    $("list").innerHTML=d.keys.length?"":"<small>ยังไม่มีคีย์</small>";
+    d.keys.forEach(function(k){
+      var row=document.createElement("div");row.className="k";
+      var left=document.createElement("div");left.style.whiteSpace="pre-wrap";left.style.flex="1";
+      left.textContent=k.key+"\nหมด: "+new Date(k.exp).toLocaleString("th-TH")+"\nHWID: "+(k.hwid?k.hwid.slice(0,12)+"… (ผูกแล้ว)":"ยังไม่ผูก");
+      var btns=document.createElement("div");btns.style.cssText="display:flex;flex-direction:column;gap:6px";
+      var rs=document.createElement("button");rs.className="r";rs.style.background="#e67e22";rs.textContent="รีเซ็ต HWID";
+      rs.onclick=function(){api("reset",{key:k.key}).then(load);};
+      var del=document.createElement("button");del.className="r";del.textContent="ลบ";
+      del.onclick=function(){api("delete",{key:k.key}).then(load);};
+      btns.appendChild(rs);btns.appendChild(del);
+      row.appendChild(left);row.appendChild(btns);$("list").appendChild(row);
+    });
+  }).catch(function(e){$("err").textContent=e.message;});
+}
+$("go").onclick=function(){PW=$("pw").value;sessionStorage.setItem("pw",PW);load();};
+$("gen").onclick=function(){
+  api("create",{name:$("name").value,minutes:Number($("dur").value)*Number($("unit").value)}).then(function(d){
+    var s='getgenv().Key = "'+d.key+'"\nloadstring(game:HttpGet("'+location.origin+'/loader.lua"))()';
+    $("out").style.display="block";$("out").textContent=s;$("cp").style.display="block";
+    $("cp").onclick=function(){navigator.clipboard.writeText(s);$("cp").textContent="คัดลอกแล้ว ✓";setTimeout(function(){$("cp").textContent="คัดลอกสคริปต์";},1500);};
+    load();
+  });
+};
+$("sv").onclick=function(){api("script",{script:$("script").value}).then(function(){$("sv").textContent="บันทึกแล้ว ✓";setTimeout(function(){$("sv").textContent="บันทึกสคริปต์";},1500);});};
+if(PW)load();
+</script></body></html>
