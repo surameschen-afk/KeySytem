@@ -3,7 +3,8 @@
 const http = require('http'), fs = require('fs'), crypto = require('crypto');
 const PORT = process.env.PORT || 3000;
 const ADMIN = process.env.ADMIN_PASSWORD || '';
-const BIND = process.env.BIND_MODE === 'hwid' ? 'hwid' : 'ip'; // ค่าเริ่มต้น: ผูกตาม IP (ตั้ง BIND_MODE=hwid เพื่อกลับไปผูกตามเครื่อง)
+const BIND = ['hwid', 'ip'].includes(process.env.BIND_MODE) ? process.env.BIND_MODE : 'uid'; // ค่าเริ่มต้น: ผูกตามไอดีโรบอค (BIND_MODE=hwid หรือ ip เพื่อเปลี่ยนโหมด)
+const LBL = { uid: 'ไอดีโรบอค', ip: 'IP', hwid: 'HWID' }[BIND];
 const getIP = req => (String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '').replace(/^::ffff:/, '');
 if (!ADMIN) { console.log('กรุณาตั้ง ADMIN_PASSWORD ก่อน'); process.exit(1); }
 
@@ -47,8 +48,10 @@ local function getHWID()
     return game:GetService("RbxAnalyticsService"):GetClientId()
 end
 local HttpService = game:GetService("HttpService")
+local uid = 0
+pcall(function() uid = game:GetService("Players").LocalPlayer.UserId end)
 local ok, src = pcall(function()
-    return game:HttpGet("${base}/api/script?key=" .. HttpService:UrlEncode(key) .. "&hwid=" .. HttpService:UrlEncode(getHWID()))
+    return game:HttpGet("${base}/api/script?key=" .. HttpService:UrlEncode(key) .. "&hwid=" .. HttpService:UrlEncode(getHWID()) .. "&uid=" .. tostring(uid))
 end)
 if ok and src then
     loadstring(src)()
@@ -61,13 +64,14 @@ end
   if (p === '/api/script') {
     const k = (url.searchParams.get('key') || '').toUpperCase();
     const hwid = (url.searchParams.get('hwid') || '').trim();
+    const uid = /^[1-9]\d{0,15}$/.test(url.searchParams.get('uid') || '') ? url.searchParams.get('uid') : '';
     const rec = db.keys[k];
     if (!valid(k)) { log('fail', k.slice(0, 30) || '-', 'คีย์ผิดหรือหมดอายุ'); return send(res, 200, 'warn("คีย์ไม่ถูกต้องหรือหมดอายุ")', 'text/plain'); }
     if (rec.banned) { log('ban', k, 'คีย์ที่ถูกระงับพยายามใช้'); return send(res, 200, 'warn("คีย์นี้ถูกระงับ")', 'text/plain'); }
-    const id = BIND === 'hwid' ? hwid : getIP(req);
-    if (!id) return send(res, 200, 'warn("อ่านข้อมูลเครื่องไม่ได้")', 'text/plain');
-    if (!rec.hwid) { rec.hwid = id; log('bind', k, 'ผูก ' + (BIND === 'ip' ? 'IP ' + id : 'HWID') + ' ครั้งแรก'); }
-    else if (rec.hwid !== id) { log('hwid', k, (BIND === 'ip' ? 'IP ' + id : 'HWID') + ' ไม่ตรง ถูกปฏิเสธ'); return send(res, 200, 'warn("คีย์นี้ผูกกับ' + (BIND === 'ip' ? ' IP อื่น' : 'เครื่องอื่น') + 'แล้ว")', 'text/plain'); }
+    const id = BIND === 'hwid' ? hwid : BIND === 'ip' ? getIP(req) : uid;
+    if (!id) return send(res, 200, 'warn("อ่านข้อมูลบัญชีไม่ได้")', 'text/plain');
+    if (!rec.hwid) { rec.hwid = id; log('bind', k, 'ผูก ' + LBL + ' ' + id + ' ครั้งแรก'); }
+    else if (rec.hwid !== id) { log('hwid', k, LBL + ' ' + id + ' ไม่ตรง ถูกปฏิเสธ'); return send(res, 200, 'warn("คีย์นี้ผูกกับ' + LBL + 'อื่นแล้ว")', 'text/plain'); }
     // เริ่มนับเวลาตอนใช้งานสำเร็จครั้งแรก (คีย์ถาวรไม่ต้องนับ)
     if (!rec.perm && !rec.exp) { rec.exp = Date.now() + (rec.dur || 1) * 60000; log('start', k, 'เริ่มนับเวลา'); }
     rec.uses = (rec.uses || 0) + 1; rec.last = Date.now();
