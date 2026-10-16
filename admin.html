@@ -21,6 +21,7 @@ label{display:block;margin:10px 0 4px;font-size:12px;color:var(--mu)}
 input,select,textarea,button{font-family:inherit}
 input,select,textarea{width:100%;padding:12px;font-size:16px;border:1px solid var(--bd);border-radius:12px;background:rgba(0,0,0,.35);color:var(--tx);outline:0;transition:.2s}
 input:focus,select:focus,textarea:focus{border-color:var(--ac);box-shadow:0 0 0 3px color-mix(in srgb,var(--ac) 30%,transparent)}
+input:disabled{opacity:.4}
 textarea{height:170px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;resize:vertical}
 button{border:0;border-radius:12px;padding:12px;font-size:15px;color:#fff;background:var(--ac);cursor:pointer;transition:.15s;font-weight:600}
 button:hover{filter:brightness(1.15);box-shadow:0 0 18px color-mix(in srgb,var(--ac) 60%,transparent)}
@@ -36,7 +37,7 @@ button:active{transform:scale(.96)}
 .k{padding:12px 0;border-top:1px solid var(--bd);font-size:12px;word-break:break-all}
 .k:first-child{border-top:0}.k code{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;font-weight:700}
 .tg{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;margin-left:4px}
-.tg.o{background:rgba(0,209,160,.18);color:var(--ok)}.tg.e{background:rgba(255,93,115,.18);color:var(--er)}.tg.y{background:rgba(243,156,18,.2);color:#f5b041}
+.tg.o{background:rgba(0,209,160,.18);color:var(--ok)}.tg.e{background:rgba(255,93,115,.18);color:var(--er)}.tg.y{background:rgba(243,156,18,.2);color:#f5b041}.tg.p{background:rgba(108,92,231,.25);color:#a29bfe}
 .ac{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .out{margin-top:10px;padding:10px;background:rgba(0,0,0,.35);border-radius:12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;white-space:pre-wrap;word-break:break-all;animation:in .3s both}
 .nav{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:6px;padding:10px 10px max(10px,env(safe-area-inset-bottom));background:rgba(11,13,20,.8);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-top:1px solid var(--bd)}
@@ -68,8 +69,9 @@ button:active{transform:scale(.96)}
 <div class="pn on" id="p-gen"><div class="g"><h3>✨ สร้างคีย์</h3>
 <label>ชื่อคีย์</label><input id="name" value="MY-SECRET-KEY" autocapitalize="characters">
 <div class="row"><div><label>เวลา</label><input id="dur" type="number" min="1" value="24"></div>
-<div><label>หน่วย</label><select id="unit"><option value="1">นาที</option><option value="60" selected>ชั่วโมง</option><option value="1440">วัน</option></select></div>
+<div><label>หน่วย</label><select id="unit"><option value="1">นาที</option><option value="60" selected>ชั่วโมง</option><option value="1440">วัน</option><option value="0">♾️ ถาวร</option></select></div>
 <div><label>จำนวน</label><input id="cnt" type="number" min="1" max="50" value="1"></div></div>
+<small style="color:var(--mu);display:block;margin-top:6px">⏸ เวลาจะเริ่มนับเมื่อมีคนใช้คีย์สำเร็จครั้งแรก</small>
 <label>โน้ต (เช่น ชื่อลูกค้า)</label><input id="note" maxlength="60">
 <button class="b" id="gen">สร้างคีย์</button><div id="res"></div></div></div>
 
@@ -116,8 +118,9 @@ function load(){return api("list").then(function(d){D=d;$("login").style.display
  $("s1").textContent=d.keys.length;$("s2").textContent=d.keys.filter(function(k){return k.hwid}).length;$("s3").textContent=d.keys.filter(function(k){return k.banned}).length;$("s4").textContent=d.keys.reduce(function(a,k){return a+k.uses},0);
  renderList();renderLogs()}).catch(function(e){if(!D){$("login").firstChild.classList.add("shake");setTimeout(function(){$("login").firstChild.classList.remove("shake")},500);toast(e.message,"er")}})}
 function shown(){var q=$("q").value.toLowerCase(),f=$("f").value;return D.keys.filter(function(k){if(q&&(k.key.toLowerCase().indexOf(q)<0&&k.note.toLowerCase().indexOf(q)<0))return false;if(f==="free")return!k.hwid;if(f==="bound")return!!k.hwid;if(f==="ban")return k.banned;return true})}
-function renderList(){if(!D)return;var a=shown();$("list").innerHTML=a.length?a.map(function(k){return'<div class="k"><code>'+k.key+'</code>'+(k.banned?'<span class="tg e">แบน</span>':'')+'<span class="tg '+(k.hwid?'o':'y')+'">'+(k.hwid?'ผูกแล้ว':'ยังไม่ผูก')+'</span>'+(k.note?'<div>📝 '+esc(k.note)+'</div>':'')+'<div style="color:var(--mu)">⏳ <span class="cd" data-e="'+k.exp+'"></span> · ใช้ '+k.uses+' ครั้ง'+(k.last?' · ล่าสุด '+new Date(k.last).toLocaleString("th-TH"):'')+'</div>'+(k.hwid?'<div style="color:var(--mu)">HWID: '+esc(k.hwid.slice(0,16))+'…</div>':'')+'<div class="ac" data-k="'+k.key+'"><button class="s gr" data-a="cp">คัดลอก</button><button class="s gh" data-a="h">+1ชม</button><button class="s gh" data-a="d">+1วัน</button><button class="s or" data-a="rs">รีเซ็ต HWID</button><button class="s gh" data-a="bn">'+(k.banned?'ปลดแบน':'แบน')+'</button><button class="s rd" data-a="dl">ลบ</button></div></div>'}).join(""):'<small style="color:var(--mu)">ไม่พบคีย์</small>';tick()}
-var ic={create:"➕",bind:"🔗",use:"✅",fail:"❌",hwid:"⚠️",ban:"⛔"};
+function timeTxt(k){if(k.perm)return'♾️ ถาวร';if(!k.exp)return'⏸ ยังไม่เริ่มนับ ('+fmt(k.dur*60000).replace(/ \d+ว$/,"")+')';return'⏳ <span class="cd" data-e="'+k.exp+'"></span>'}
+function renderList(){if(!D)return;var a=shown();$("list").innerHTML=a.length?a.map(function(k){return'<div class="k"><code>'+k.key+'</code>'+(k.banned?'<span class="tg e">แบน</span>':'')+(k.perm?'<span class="tg p">ถาวร</span>':!k.exp?'<span class="tg y">รอเริ่มนับ</span>':'')+'<span class="tg '+(k.hwid?'o':'y')+'">'+(k.hwid?'ผูกแล้ว':'ยังไม่ผูก')+'</span>'+(k.note?'<div>📝 '+esc(k.note)+'</div>':'')+'<div style="color:var(--mu)">'+timeTxt(k)+' · ใช้ '+k.uses+' ครั้ง'+(k.last?' · ล่าสุด '+new Date(k.last).toLocaleString("th-TH"):'')+'</div>'+(k.hwid?'<div style="color:var(--mu)">HWID: '+esc(k.hwid.slice(0,16))+'…</div>':'')+'<div class="ac" data-k="'+k.key+'"><button class="s gr" data-a="cp">คัดลอก</button>'+(k.perm?'':'<button class="s gh" data-a="h">+1ชม</button><button class="s gh" data-a="d">+1วัน</button>')+'<button class="s or" data-a="rs">รีเซ็ต HWID</button><button class="s gh" data-a="bn">'+(k.banned?'ปลดแบน':'แบน')+'</button><button class="s rd" data-a="dl">ลบ</button></div></div>'}).join(""):'<small style="color:var(--mu)">ไม่พบคีย์</small>';tick()}
+var ic={create:"➕",bind:"🔗",use:"✅",fail:"❌",hwid:"⚠️",ban:"⛔",start:"⏱️"};
 function renderLogs(){$("logs").innerHTML=D.logs.length?D.logs.map(function(l){return'<div class="lg"><span>'+(ic[l.type]||"•")+'</span><div><b>'+esc(l.key)+'</b> '+esc(l.info)+'<br><small>'+new Date(l.t).toLocaleString("th-TH")+'</small></div></div>'}).join(""):'<small style="color:var(--mu)">ยังไม่มีประวัติ</small>'}
 function tick(){var n=Date.now();document.querySelectorAll(".cd").forEach(function(e){e.textContent=fmt(Number(e.dataset.e)-n)})}
 setInterval(tick,1000);setInterval(function(){if(D&&!document.hidden)load()},20000);
@@ -128,7 +131,8 @@ $("out2").onclick=function(){sessionStorage.removeItem("pw");location.reload()};
 $("snd").onclick=function(){snd=!snd;ls("snd",snd?"1":"0");$("snd").textContent=snd?"🔊":"🔇";sfx.click()};
 document.querySelectorAll(".dot").forEach(function(b){b.onclick=function(){setAc(b.dataset.c);sfx.click()}});
 document.querySelectorAll(".nav button").forEach(function(b){b.onclick=function(){sfx.tab();document.querySelectorAll(".nav button").forEach(function(x){x.classList.remove("on")});b.classList.add("on");document.querySelectorAll(".pn").forEach(function(p){p.classList.remove("on")});$("p-"+b.dataset.t).classList.add("on")}});
-$("gen").onclick=function(){sfx.click();api("create",{name:$("name").value,count:Number($("cnt").value),minutes:Number($("dur").value)*Number($("unit").value),note:$("note").value}).then(function(d){
+$("unit").onchange=function(){$("dur").disabled=$("unit").value==="0"};
+$("gen").onclick=function(){sfx.click();var perm=$("unit").value==="0";api("create",{name:$("name").value,count:Number($("cnt").value),perm:perm,minutes:perm?0:Number($("dur").value)*Number($("unit").value),note:$("note").value}).then(function(d){
  $("res").innerHTML=d.keys.map(function(k){return'<div class="out">'+esc(scr(k))+'<button class="s gr" style="margin-top:8px;width:100%" data-c="'+k+'">คัดลอกสคริปต์</button></div>'}).join("")+(d.keys.length>1?'<button class="b gh" id="cpk">คัดลอกคีย์ทั้งหมด ('+d.keys.length+')</button>':'');
  if($("cpk"))$("cpk").onclick=function(){copy(d.keys.join("\n"))};
  confetti();toast("สร้าง "+d.keys.length+" คีย์สำเร็จ 🎉","ok");load()}).catch(function(e){toast(e.message,"er")})};
