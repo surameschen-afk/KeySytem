@@ -24,8 +24,9 @@ const log = (type, key, info) => {
     fetch(WEBHOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: `${EMO[type]} **${key}** ${info}`.slice(0, 1900) }) }).catch(() => {});
 };
 
-// ไอดีโรบอค: ตัวเลขล้วน 1-16 หลัก
-const cleanId = s => /^[1-9]\d{0,15}$/.test(String(s).trim()) ? String(s).trim() : '';
+// ไอดีโรบอค: ชื่อ @username (3-20 ตัว a-z 0-9 _ ไม่สนตัวพิมพ์ใหญ่เล็ก) หรือเลข UserID
+const cleanUid = s => /^[1-9]\d{0,15}$/.test(String(s).trim()) ? String(s).trim() : '';
+const cleanId = s => { s = String(s).trim().replace(/^@/, ''); return /^[A-Za-z0-9_]{3,20}$/.test(s) ? s.toLowerCase() : cleanUid(s); };
 const parseIds = s => [...new Set(String(s || '').split(/[\s,]+/).map(cleanId).filter(Boolean))].slice(0, 20);
 
 // คีย์ใช้ได้เมื่อ: ถาวร / ยังไม่เริ่มนับ (exp = null) / ยังไม่หมดอายุ
@@ -66,10 +67,11 @@ local function getHWID()
     return game:GetService("RbxAnalyticsService"):GetClientId()
 end
 local HttpService = game:GetService("HttpService")
-local uid = 0
+local uid, pname = 0, ""
 pcall(function() uid = game:GetService("Players").LocalPlayer.UserId end)
+pcall(function() pname = game:GetService("Players").LocalPlayer.Name end)
 local ok, src = pcall(function()
-    return game:HttpGet("${base}/api/script?key=" .. HttpService:UrlEncode(key) .. "&hwid=" .. HttpService:UrlEncode(getHWID()) .. "&uid=" .. tostring(uid))
+    return game:HttpGet("${base}/api/script?key=" .. HttpService:UrlEncode(key) .. "&hwid=" .. HttpService:UrlEncode(getHWID()) .. "&uid=" .. tostring(uid) .. "&name=" .. HttpService:UrlEncode(pname))
 end)
 if ok and src then
     loadstring(src)()
@@ -83,26 +85,35 @@ end
     if (limited(getIP(req))) return send(res, 200, 'warn("ส่งคำขอถี่เกินไป รอสักครู่")', 'text/plain');
     const k = (url.searchParams.get('key') || '').toUpperCase();
     const hwid = (url.searchParams.get('hwid') || '').trim();
-    const uid = cleanId(url.searchParams.get('uid') || '');
+    const uid = cleanUid(url.searchParams.get('uid') || '');
+    const name = cleanId(url.searchParams.get('name') || ''); // ชื่อ @ ของผู้เล่น (ตัวพิมพ์เล็ก)
     const rec = db.keys[k];
     // ไอดีที่ถูกแบนทั้งระบบ
-    if (uid && db.blacklist.some(b => b.id === uid)) { log('block', k.slice(0, 30) || '-', 'ไอดี ' + uid + ' อยู่ในแบล็กลิสต์ ถูกปฏิเสธ'); return send(res, 200, 'warn("ไอดีนี้ถูกระงับการใช้งาน")', 'text/plain'); }
+    if ((uid || name) && db.blacklist.some(b => b.id === uid || b.id === name)) { log('block', k.slice(0, 30) || '-', 'ไอดี ' + (name ? '@' + name : uid) + ' อยู่ในแบล็กลิสต์ ถูกปฏิเสธ'); return send(res, 200, 'warn("ไอดีนี้ถูกระงับการใช้งาน")', 'text/plain'); }
     if (!valid(k)) { log('fail', k.slice(0, 30) || '-', 'คีย์ผิดหรือหมดอายุ'); return send(res, 200, 'warn("คีย์ไม่ถูกต้องหรือหมดอายุ")', 'text/plain'); }
     if (rec.banned) { log('ban', k, 'คีย์ที่ถูกระงับพยายามใช้'); return send(res, 200, 'warn("คีย์นี้ถูกระงับ")', 'text/plain'); }
-    // ไวท์ลิสต์ไอดีโรบอค: ถ้าคีย์มีไอดีที่เพิ่มไว้ ต้องเป็นไอดีในรายการเท่านั้น
+    // รายชื่อไอดีโรบอค (@ชื่อ) ที่ใช้คีย์นี้ได้ — ตรวจด้วยชื่อ หรือ UserID
     const wl = rec.ids || [];
-    if (wl.length && !wl.includes(uid)) { log('hwid', k, 'ไอดี ' + (uid || '-') + ' ไม่อยู่ในรายการที่อนุญาต ถูกปฏิเสธ'); return send(res, 200, 'warn("ไอดีโรบอคนี้ไม่ได้รับอนุญาตใช้คีย์นี้")', 'text/plain'); }
-    // โหมดผูกด้วยไอดี + มีไวท์ลิสต์ → ใช้รายการไอดีเป็นตัวผูกแทน (ไม่ผูกซ้ำ)
-    if (!(BIND === 'uid' && wl.length)) {
-      const id = BIND === 'hwid' ? hwid : BIND === 'ip' ? getIP(req) : uid;
+    const me = [name, uid].filter(Boolean);
+    if (wl.length && !me.some(x => wl.includes(x))) { log('hwid', k, 'ไอดี ' + (name ? '@' + name : uid || '-') + ' ไม่อยู่ในรายการที่อนุญาต ถูกปฏิเสธ'); return send(res, 200, 'warn("ไอดีโรบอคนี้ไม่ได้รับอนุญาตใช้คีย์นี้")', 'text/plain'); }
+    if (BIND === 'uid') {
+      // โหมดชื่อ: คนแรกที่ใช้จะถูกเพิ่มเข้ารายการอัตโนมัติ แอดมินเพิ่มคนอื่นเองได้ภายหลัง
+      if (!wl.length) {
+        if (!me.length) return send(res, 200, 'warn("อ่านข้อมูลบัญชีไม่ได้")', 'text/plain');
+        if (rec.hwid && uid && rec.hwid !== uid) { log('hwid', k, 'ไอดี ' + uid + ' ไม่ตรง ถูกปฏิเสธ'); return send(res, 200, 'warn("คีย์นี้ผูกกับ' + LBL + 'อื่นแล้ว")', 'text/plain'); }
+        rec.ids = [name || uid]; if (uid) rec.hwid = uid;
+        log('bind', k, 'ผูก ' + (name ? '@' + name : uid) + ' ครั้งแรก');
+      }
+    } else {
+      const id = BIND === 'hwid' ? hwid : getIP(req);
       if (!id) return send(res, 200, 'warn("อ่านข้อมูลบัญชีไม่ได้")', 'text/plain');
       if (!rec.hwid) { rec.hwid = id; log('bind', k, 'ผูก ' + LBL + ' ' + id + ' ครั้งแรก'); }
       else if (rec.hwid !== id) { log('hwid', k, LBL + ' ' + id + ' ไม่ตรง ถูกปฏิเสธ'); return send(res, 200, 'warn("คีย์นี้ผูกกับ' + LBL + 'อื่นแล้ว")', 'text/plain'); }
     }
     // เริ่มนับเวลาตอนใช้งานสำเร็จครั้งแรก (คีย์ถาวรไม่ต้องนับ)
     if (!rec.perm && !rec.exp) { rec.exp = Date.now() + (rec.dur || 1) * 60000; log('start', k, 'เริ่มนับเวลา'); }
-    rec.uses = (rec.uses || 0) + 1; rec.last = Date.now(); if (uid) rec.lastUid = uid;
-    log('use', k, 'โหลดสคริปต์' + (uid ? ' (ไอดี ' + uid + ')' : ''));
+    rec.uses = (rec.uses || 0) + 1; rec.last = Date.now(); if (uid) rec.lastUid = uid; if (name) rec.lastName = name;
+    log('use', k, 'โหลดสคริปต์' + (name ? ' (@' + name + ')' : ''));
     return send(res, 200, db.script, 'text/plain');
   }
 
@@ -110,7 +121,7 @@ end
     if (req.headers['x-admin'] !== ADMIN) return send(res, 401, { error: 'รหัสไม่ถูกต้อง' });
 
     if (p === '/admin/api/list') {
-      const keys = Object.entries(db.keys).map(([k, v]) => ({ key: k, exp: v.exp || null, perm: !!v.perm, dur: v.dur || 0, created: v.created || 0, hwid: v.hwid || null, note: v.note || '', banned: !!v.banned, uses: v.uses || 0, last: v.last || 0, ids: v.ids || [], lastUid: v.lastUid || '' })).sort((a, b) => b.created - a.created);
+      const keys = Object.entries(db.keys).map(([k, v]) => ({ key: k, exp: v.exp || null, perm: !!v.perm, dur: v.dur || 0, created: v.created || 0, hwid: v.hwid || null, note: v.note || '', banned: !!v.banned, uses: v.uses || 0, last: v.last || 0, ids: v.ids || [], lastUid: v.lastUid || '', lastName: v.lastName || '' })).sort((a, b) => b.created - a.created);
       return send(res, 200, { keys, script: db.script, logs: db.logs, blacklist: db.blacklist, bind: BIND, webhook: !!WEBHOOK });
     }
     if (p === '/admin/api/create') {
@@ -129,7 +140,7 @@ end
           : { perm: false, exp: null, dur: mins, created: Date.now(), hwid: null, note, uses: 0, ids: [...ids] };
         made.push(key);
       }
-      log('create', made[0], `สร้าง ${count} คีย์ (${perm ? 'ถาวร' : mins + ' นาที เริ่มนับเมื่อใช้งาน'})` + (ids.length ? ' ล็อกไอดี ' + ids.join(',') : ''));
+      log('create', made[0], `สร้าง ${count} คีย์ (${perm ? 'ถาวร' : mins + ' นาที เริ่มนับเมื่อใช้งาน'})` + (ids.length ? ' ล็อกไอดี ' + ids.map(i => '@' + i).join(',') : ''));
       return send(res, 200, { keys: made });
     }
     if (p === '/admin/api/extend') {
@@ -162,18 +173,18 @@ end
       const b = await readBody(req);
       const r = db.keys[b.key], add = parseIds(b.id);
       if (!r) return send(res, 200, { ok: false, error: 'ไม่พบคีย์' });
-      if (!add.length) return send(res, 200, { ok: false, error: 'ไอดีต้องเป็นตัวเลขเท่านั้น' });
+      if (!add.length) return send(res, 200, { ok: false, error: 'ชื่อโรบอคไม่ถูกต้อง (a-z 0-9 _ ยาว 3-20 ตัว)' });
       r.ids = r.ids || [];
-      // คีย์ที่ผูกไอดีไว้แล้ว (โหมด uid) → เก็บไอดีเดิมเข้ารายการก่อน จะได้ไม่หลุด
+      // คีย์ที่ผูกไว้แล้วแต่ยังไม่มีรายการ (ข้อมูลเก่า) → เก็บไอดีเดิมเข้ารายการก่อน จะได้ไม่หลุด
       if (BIND === 'uid' && !r.ids.length && r.hwid) r.ids.push(r.hwid);
       for (const i of add) if (!r.ids.includes(i) && r.ids.length < 20) r.ids.push(i);
-      save(); log('addid', b.key, 'เพิ่มไอดี ' + add.join(','));
+      save(); log('addid', b.key, 'เพิ่มไอดี ' + add.map(i => '@' + i).join(','));
       return send(res, 200, { ok: true });
     }
     if (p === '/admin/api/rmid') {
       const b = await readBody(req);
       const r = db.keys[b.key];
-      if (r) { r.ids = (r.ids || []).filter(i => i !== String(b.id)); save(); log('addid', b.key, 'ลบไอดี ' + b.id); }
+      if (r) { r.ids = (r.ids || []).filter(i => i !== String(b.id)); save(); log('addid', b.key, 'ลบไอดี @' + b.id); }
       return send(res, 200, { ok: true });
     }
     if (p === '/admin/api/note') {
@@ -186,7 +197,7 @@ end
       const b = await readBody(req);
       if (b.remove) { db.blacklist = db.blacklist.filter(x => x.id !== String(b.id)); save(); return send(res, 200, { ok: true }); }
       const add = parseIds(b.id);
-      if (!add.length) return send(res, 200, { ok: false, error: 'ไอดีต้องเป็นตัวเลขเท่านั้น' });
+      if (!add.length) return send(res, 200, { ok: false, error: 'ชื่อโรบอคไม่ถูกต้อง (a-z 0-9 _ ยาว 3-20 ตัว)' });
       const why = String(b.reason || '').slice(0, 60);
       for (const i of add) if (!db.blacklist.some(x => x.id === i)) db.blacklist.unshift({ id: i, reason: why, t: Date.now() });
       save(); log('block', 'BLACKLIST', 'แบนไอดี ' + add.join(',') + (why ? ' (' + why + ')' : ''));
