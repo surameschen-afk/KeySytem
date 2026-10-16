@@ -195,7 +195,7 @@ end
     // แบล็กลิสต์ไอดีโรบอค (ใช้ได้ทุกคีย์)
     if (p === '/admin/api/blacklist') {
       const b = await readBody(req);
-      if (b.remove) { db.blacklist = db.blacklist.filter(x => x.id !== String(b.id)); save(); return send(res, 200, { ok: true }); }
+      if (b.remove) { const rid = cleanId(b.id) || String(b.id).trim(); db.blacklist = db.blacklist.filter(x => x.id !== rid && x.id !== String(b.id)); save(); log('block', 'BLACKLIST', 'ปลดแบนไอดี ' + b.id); return send(res, 200, { ok: true }); }
       const add = parseIds(b.id);
       if (!add.length) return send(res, 200, { ok: false, error: 'ชื่อโรบอคไม่ถูกต้อง (a-z 0-9 _ ยาว 3-20 ตัว)' });
       const why = String(b.reason || '').slice(0, 60);
