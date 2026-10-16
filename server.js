@@ -1,4 +1,5 @@
 // ระบบคีย์เชื่อมสคริปต์จริง + HWID + แบน + ล็อก + ต่อเวลา
+// อัปเดต: คีย์ถาวร + เวลาเริ่มนับตอนใช้งานครั้งแรก
 const http = require('http'), fs = require('fs'), crypto = require('crypto');
 const PORT = process.env.PORT || 3000;
 const ADMIN = process.env.ADMIN_PASSWORD || '';
@@ -10,8 +11,11 @@ try { db = JSON.parse(fs.readFileSync(DB, 'utf8')); } catch {}
 db.logs = db.logs || [];
 const save = () => fs.writeFileSync(DB, JSON.stringify(db));
 const log = (type, key, info) => { db.logs.unshift({ t: Date.now(), type, key, info }); if (db.logs.length > 100) db.logs.length = 100; save(); };
-const valid = k => db.keys[k] && db.keys[k].exp > Date.now();
-setInterval(() => { for (const k in db.keys) if (db.keys[k].exp < Date.now()) delete db.keys[k]; save(); }, 600000);
+
+// คีย์ใช้ได้เมื่อ: ถาวร / ยังไม่เริ่มนับ (exp = null) / ยังไม่หมดอายุ
+const valid = k => { const r = db.keys[k]; return !!r && (r.perm || !r.exp || r.exp > Date.now()); };
+// ลบเฉพาะคีย์ที่เริ่มนับแล้วและหมดอายุ (ถาวรและยังไม่เริ่มนับจะไม่ถูกลบ)
+setInterval(() => { for (const k in db.keys) { const r = db.keys[k]; if (!r.perm && r.exp && r.exp < Date.now()) delete db.keys[k]; } save(); }, 600000);
 
 const readBody = req => new Promise(r => {
   let d = '';
@@ -61,6 +65,8 @@ end
     if (!hwid) return send(res, 200, 'warn("อ่าน HWID ไม่ได้")', 'text/plain');
     if (!rec.hwid) { rec.hwid = hwid; log('bind', k, 'ผูก HWID ครั้งแรก'); }
     else if (rec.hwid !== hwid) { log('hwid', k, 'HWID ไม่ตรง ถูกปฏิเสธ'); return send(res, 200, 'warn("คีย์นี้ผูกกับเครื่องอื่นแล้ว")', 'text/plain'); }
+    // เริ่มนับเวลาตอนใช้งานสำเร็จครั้งแรก (คีย์ถาวรไม่ต้องนับ)
+    if (!rec.perm && !rec.exp) { rec.exp = Date.now() + (rec.dur || 1) * 60000; log('start', k, 'เริ่มนับเวลา'); }
     rec.uses = (rec.uses || 0) + 1; rec.last = Date.now();
     log('use', k, 'โหลดสคริปต์');
     return send(res, 200, db.script, 'text/plain');
@@ -70,27 +76,35 @@ end
     if (req.headers['x-admin'] !== ADMIN) return send(res, 401, { error: 'รหัสไม่ถูกต้อง' });
 
     if (p === '/admin/api/list') {
-      const keys = Object.entries(db.keys).map(([k, v]) => ({ key: k, exp: v.exp, hwid: v.hwid || null, note: v.note || '', banned: !!v.banned, uses: v.uses || 0, last: v.last || 0 })).sort((a, b) => b.exp - a.exp);
+      const keys = Object.entries(db.keys).map(([k, v]) => ({ key: k, exp: v.exp || null, perm: !!v.perm, dur: v.dur || 0, created: v.created || 0, hwid: v.hwid || null, note: v.note || '', banned: !!v.banned, uses: v.uses || 0, last: v.last || 0 })).sort((a, b) => b.created - a.created);
       return send(res, 200, { keys, script: db.script, logs: db.logs });
     }
     if (p === '/admin/api/create') {
       const b = await readBody(req);
       const name = String(b.name || 'KEY').toUpperCase().replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '') || 'KEY';
+      const perm = !!b.perm;
       const mins = Math.max(1, Math.floor(Number(b.minutes) || 1));
       const count = Math.min(50, Math.max(1, Math.floor(Number(b.count) || 1)));
       const note = String(b.note || '').slice(0, 60);
       const made = [];
       for (let i = 0; i < count; i++) {
         const key = `${name}-${rnd(2)}-${rnd(2)}`;
-        db.keys[key] = { exp: Date.now() + mins * 60000, hwid: null, note, uses: 0 };
+        db.keys[key] = perm
+          ? { perm: true, exp: null, dur: 0, created: Date.now(), hwid: null, note, uses: 0 }
+          : { perm: false, exp: null, dur: mins, created: Date.now(), hwid: null, note, uses: 0 };
         made.push(key);
       }
-      log('create', made[0], `สร้าง ${count} คีย์`);
+      log('create', made[0], `สร้าง ${count} คีย์ (${perm ? 'ถาวร' : mins + ' นาที เริ่มนับเมื่อใช้งาน'})`);
       return send(res, 200, { keys: made });
     }
     if (p === '/admin/api/extend') {
       const b = await readBody(req);
-      if (db.keys[b.key]) { db.keys[b.key].exp += Math.max(1, Number(b.minutes) || 0) * 60000; save(); }
+      const r = db.keys[b.key];
+      if (r && !r.perm) {
+        const add = Math.max(1, Number(b.minutes) || 0);
+        if (r.exp) r.exp += add * 60000; else r.dur = (r.dur || 0) + add; // ยังไม่เริ่มนับ → เพิ่มที่ระยะเวลา
+        save();
+      }
       return send(res, 200, { ok: true });
     }
     if (p === '/admin/api/ban') {
