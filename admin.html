@@ -79,7 +79,7 @@ button:active{transform:scale(.96)}
 
 <div class="pn" id="p-keys"><div class="g"><h3>📋 คีย์ทั้งหมด</h3>
 <div class="row"><input id="q" placeholder="ค้นหาคีย์/โน้ต/ไอดี"><select id="f"><option value="all">ทั้งหมด</option><option value="free">ยังไม่ผูก</option><option value="bound">ผูกแล้ว</option><option value="ban">ถูกแบน</option><option value="noid">ไม่มีไอดีล็อก</option></select></div>
-<button class="s gh b" id="cpall">คัดลอกคีย์ที่แสดงทั้งหมด</button><div id="list" style="margin-top:6px"></div></div></div>
+<div class="row"><button class="s gh b" id="cpall">คัดลอกคีย์ทั้งหมด</button><button class="s gh b" id="cpnm">คัดลอกคีย์+ชื่อ</button></div><div id="list" style="margin-top:6px"></div></div></div>
 
 <div class="pn" id="p-bl"><div class="g"><h3>🚫 แบนไอดีโรบอค</h3><small style="color:var(--mu)">ไอดีในรายการนี้ใช้ไม่ได้ทุกคีย์ (ใส่ @ชื่อ หรือเลข UserID · หลายไอดีคั่นด้วย , ได้)</small>
 <label>ไอดีโรบอค</label><input id="blid" autocapitalize="none" placeholder="เช่น @badguy99">
@@ -147,12 +147,18 @@ document.querySelectorAll(".dot").forEach(function(b){b.onclick=function(){setAc
 document.querySelectorAll(".nav button").forEach(function(b){b.onclick=function(){sfx.tab();document.querySelectorAll(".nav button").forEach(function(x){x.classList.remove("on")});b.classList.add("on");document.querySelectorAll(".pn").forEach(function(p){p.classList.remove("on")});$("p-"+b.dataset.t).classList.add("on")}});
 $("unit").onchange=function(){$("dur").disabled=$("unit").value==="0"};
 $("gen").onclick=function(){sfx.click();var perm=$("unit").value==="0";api("create",{name:$("name").value,count:Number($("cnt").value),perm:perm,minutes:perm?0:Number($("dur").value)*Number($("unit").value),note:$("note").value,ids:$("ids").value}).then(function(d){
- $("res").innerHTML=d.keys.map(function(k){return'<div class="out">'+esc(scr(k))+'<button class="s gr" style="margin-top:8px;width:100%" data-c="'+k+'">คัดลอกสคริปต์</button></div>'}).join("")+(d.keys.length>1?'<button class="b gh" id="cpk">คัดลอกคีย์ทั้งหมด ('+d.keys.length+')</button>':'');
+ $("res").innerHTML=d.keys.map(function(k){return'<div class="out">'+esc(scr(k))+'<button class="s gr" style="margin-top:8px;width:100%" data-c="'+k+'">คัดลอกสคริปต์</button></div>'}).join("")+(d.keys.length>1?'<button class="b gh" id="cpk">คัดลอกคีย์ทั้งหมด ('+d.keys.length+')</button>':'')+'<button class="b gh" id="cpkn">คัดลอกคีย์+ชื่อ'+(d.keys.length>1?' ('+d.keys.length+')':'')+'</button>';
  if($("cpk"))$("cpk").onclick=function(){copy(d.keys.join("\n"))};
+ $("cpkn").onclick=function(){
+  var extra=[$("note").value.trim(),$("ids").value.trim()].filter(Boolean).join(" | ");
+  copy(d.keys.map(function(k){return extra?k+" | "+extra:k}).join("\n"))
+ };
  confetti();toast("สร้าง "+d.keys.length+" คีย์สำเร็จ 🎉","ok");load()}).catch(function(e){toast(e.message,"er")})};
 $("res").onclick=function(e){var k=e.target.dataset&&e.target.dataset.c;if(k)copy(scr(k))};
 $("q").oninput=renderList;$("f").onchange=renderList;
 $("cpall").onclick=function(){if(!D)return;var a=shown().map(function(k){return k.key});copy(a.join("\n"))};
+$("cpnm").onclick=function(){if(!D)return;var a=shown().map(function(k){return[k.key,k.note,k.ids.map(idl2).join(", ")].filter(Boolean).join(" | ")});copy(a.join("\n"))};
+function idl2(i){return/^\d+$/.test(i)?i:"@"+i}
 $("list").onclick=function(e){var t=e.target.closest("[data-a]");if(!t)return;var row=t.closest(".k"),k=row.dataset.k,a=t.dataset.a,rec=D.keys.filter(function(x){return x.key===k})[0];sfx.click();
  var done=function(m){return function(){toast(m,"ok");load()}};
  if(a==="cp")copy(scr(k));
