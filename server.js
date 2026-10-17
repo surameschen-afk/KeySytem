@@ -1,136 +1,214 @@
-// เว็บรับซองของขวัญ TrueMoney Wallet
-// รัน: node server.js   (ต้องใช้ Node.js 18 ขึ้นไป ไม่ต้องติดตั้งแพ็กเกจเพิ่ม)
-const http = require("http");
-const fs = require("fs");
-
+// ระบบคีย์เชื่อมสคริปต์จริง + HWID + แบน + ล็อก + ต่อเวลา
+// อัปเดต v2: เพิ่ม/ลบไอดีโรบอคต่อคีย์ (ไวท์ลิสต์) + แบนไอดีโรบอค (แบล็กลิสต์) + แก้โน้ต + Webhook Discord + กันยิงรัว + สำรองข้อมูล
+const http = require('http'), fs = require('fs'), crypto = require('crypto');
 const PORT = process.env.PORT || 3000;
-const PHONE = process.env.TRUEMONEY_PHONE || "0992952538"; // เบอร์ที่รับเงิน (ฝั่งเซิร์ฟเวอร์เท่านั้น)
-const LOG_FILE = "redemptions.jsonl";
+const ADMIN = process.env.ADMIN_PASSWORD || '';
+const WEBHOOK = process.env.WEBHOOK_URL || ''; // (ไม่บังคับ) ลิงก์ Discord Webhook แจ้งเตือนเหตุการณ์สำคัญ
+const BIND = ['hwid', 'ip'].includes(process.env.BIND_MODE) ? process.env.BIND_MODE : 'uid'; // ค่าเริ่มต้น: ผูกตามไอดีโรบอค
+const LBL = { uid: 'ไอดีโรบอค', ip: 'IP', hwid: 'HWID' }[BIND];
+const getIP = req => (String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+if (!ADMIN) { console.log('กรุณาตั้ง ADMIN_PASSWORD ก่อน'); process.exit(1); }
 
-const ERRORS = {
-  VOUCHER_NOT_FOUND: "ไม่พบซองนี้ ตรวจสอบลิงก์อีกครั้ง",
-  VOUCHER_OUT_OF_STOCK: "ซองนี้ถูกรับไปหมดแล้ว",
-  VOUCHER_EXPIRED: "ซองนี้หมดอายุแล้ว",
-  TARGET_USER_REDEEMED: "เบอร์นี้เคยรับซองนี้ไปแล้ว",
-  CANNOT_GET_OWN_VOUCHER: "รับซองที่ตัวเองสร้างไม่ได้",
-  INTERNAL_ERROR: "ระบบ TrueMoney ขัดข้อง ลองใหม่อีกครั้ง",
+const DB = './data.json';
+let db = { keys: {}, script: 'print("สคริปต์ทำงานแล้ว")', logs: [], blacklist: [] };
+try { db = JSON.parse(fs.readFileSync(DB, 'utf8')); } catch {}
+db.logs = db.logs || [];
+db.blacklist = db.blacklist || [];
+const save = () => fs.writeFileSync(DB, JSON.stringify(db));
+const EMO = { create: '➕', bind: '🔗', fail: '❌', hwid: '⚠️', ban: '⛔', start: '⏱️', block: '🚫', addid: '🆔' };
+const log = (type, key, info) => {
+  db.logs.unshift({ t: Date.now(), type, key, info });
+  if (db.logs.length > 200) db.logs.length = 200;
+  save();
+  if (WEBHOOK && EMO[type] && typeof fetch === 'function')
+    fetch(WEBHOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: `${EMO[type]} **${key}** ${info}`.slice(0, 1900) }) }).catch(() => {});
 };
 
-// จำกัดจำนวนครั้งต่อ IP (กันยิงรัว)
+// ไอดีโรบอค: ชื่อ @username (3-20 ตัว a-z 0-9 _ ไม่สนตัวพิมพ์ใหญ่เล็ก) หรือเลข UserID
+const cleanUid = s => /^[1-9]\d{0,15}$/.test(String(s).trim()) ? String(s).trim() : '';
+const cleanId = s => { s = String(s).trim().replace(/^@/, ''); return /^[A-Za-z0-9_]{3,20}$/.test(s) ? s.toLowerCase() : cleanUid(s); };
+const parseIds = s => [...new Set(String(s || '').split(/[\s,]+/).map(cleanId).filter(Boolean))].slice(0, 20);
+
+// คีย์ใช้ได้เมื่อ: ถาวร / ยังไม่เริ่มนับ (exp = null) / ยังไม่หมดอายุ
+const valid = k => { const r = db.keys[k]; return !!r && (r.perm || !r.exp || r.exp > Date.now()); };
+// ลบเฉพาะคีย์ที่เริ่มนับแล้วและหมดอายุ (ถาวรและยังไม่เริ่มนับจะไม่ถูกลบ)
+setInterval(() => { for (const k in db.keys) { const r = db.keys[k]; if (!r.perm && r.exp && r.exp < Date.now()) delete db.keys[k]; } save(); }, 600000);
+
+// กันยิงรัว: ไม่เกิน 30 ครั้ง/นาที ต่อ IP
 const hits = new Map();
-function limited(ip) {
-  const now = Date.now();
-  const list = (hits.get(ip) || []).filter((t) => now - t < 60_000);
-  list.push(now);
-  hits.set(ip, list);
-  return list.length > 10;
-}
+setInterval(() => hits.clear(), 60000);
+const limited = ip => { const n = (hits.get(ip) || 0) + 1; hits.set(ip, n); return n > 30; };
 
-function extractCode(input) {
-  const s = String(input || "").trim();
-  const m = s.match(/[?&]v=([0-9A-Za-z]+)/) || s.match(/^([0-9A-Za-z]{18,64})$/);
-  return m ? m[1] : null;
-}
-
-async function redeem(code) {
-  const r = await fetch(`https://gift.truemoney.com/campaign/vouchers/${code}/redeem`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0" },
-    body: JSON.stringify({ mobile: PHONE, voucher_hash: code }),
-  });
-  const raw = await r.text();
-  console.log("TrueMoney HTTP", r.status, raw.slice(0, 300));
-  let j = {};
-  try { j = JSON.parse(raw); } catch {}
-  const status = j?.status?.code || "INTERNAL_ERROR";
-  if (status !== "SUCCESS") return { ok: false, message: ERRORS[status] || `เกิดข้อผิดพลาด (${status})` };
-  return {
-    ok: true,
-    amount: Number(j.data?.my_ticket?.amount_baht ?? j.data?.voucher?.amount_baht ?? 0),
-    from: j.data?.owner_profile?.full_name || "",
-  };
-}
-
-const masked = PHONE.slice(0, 3) + "-xxx-" + PHONE.slice(-4);
-
-const PAGE = `<!doctype html>
-<html lang="th"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>รับซองทรูมันนี่</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Mitr:wght@400;500&family=Sarabun:wght@400;600&display=swap" rel="stylesheet">
-<style>
-:root{--bg:#fff4e8;--ink:#2b1608;--red:#d8321f;--orange:#ff7a1a;--line:#f1cfae;--ok:#1d7a3a}
-*{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px;background:var(--bg);color:var(--ink);font-family:Sarabun,sans-serif}
-main{width:100%;max-width:440px}
-h1{font-family:Mitr,sans-serif;font-weight:500;font-size:2rem;margin:0 0 6px}
-p.sub{margin:0 0 22px;line-height:1.5}
-.env{background:var(--red);color:#fff;border-radius:18px 18px 0 0;padding:18px 20px;font-family:Mitr,sans-serif;font-size:1.05rem;position:relative}
-.env::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:22px;background:#fff;clip-path:polygon(0 100%,50% 0,100% 100%)}
-.card{background:#fff;border:2px solid var(--red);border-top:0;border-radius:0 0 18px 18px;padding:26px 20px 20px}
-label{display:block;font-weight:600;margin-bottom:6px}
-input{width:100%;font:inherit;padding:12px;border:2px solid var(--line);border-radius:10px;color:var(--ink)}
-input:focus-visible,button:focus-visible{outline:3px solid var(--orange);outline-offset:2px}
-button{margin-top:14px;width:100%;font:500 1.05rem Mitr,sans-serif;padding:13px;border:0;border-radius:10px;background:var(--red);color:#fff;cursor:pointer}
-button:disabled{opacity:.6;cursor:wait}
-#msg{margin-top:14px;min-height:1.4em;font-weight:600}
-#msg.ok{color:var(--ok)}#msg.err{color:var(--red)}
-</style></head><body><main>
-<h1>รับซองทรูมันนี่</h1>
-<p class="sub">วางลิงก์ซองของขวัญ แล้วกดรับ เงินจะเข้ากระเป๋า ${masked}</p>
-<div class="env">ซองของขวัญ TrueMoney</div>
-<form class="card" id="f">
-<label for="link">ลิงก์ซองของขวัญ</label>
-<input id="link" placeholder="https://gift.truemoney.com/campaign/?v=..." autocomplete="off" required>
-<button id="btn">รับซอง</button>
-<div id="msg" role="status"></div>
-</form></main>
-<script>
-const f=document.getElementById("f"),msg=document.getElementById("msg"),btn=document.getElementById("btn");
-f.addEventListener("submit",async e=>{
-  e.preventDefault();btn.disabled=true;msg.className="";msg.textContent="กำลังรับซอง...";
-  try{
-    const r=await fetch("/api/redeem",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({link:document.getElementById("link").value})});
-    const j=await r.json();
-    if(j.ok){msg.className="ok";msg.textContent="รับสำเร็จ "+j.amount.toLocaleString("th-TH")+" บาท"+(j.from?" จาก "+j.from:"");f.reset();}
-    else{msg.className="err";msg.textContent=j.message;}
-  }catch{msg.className="err";msg.textContent="เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ลองใหม่อีกครั้ง";}
-  btn.disabled=false;
+const readBody = req => new Promise(r => {
+  let d = '';
+  req.on('data', c => { d += c; if (d.length > 2e6) req.destroy(); });
+  req.on('end', () => { try { r(JSON.parse(d || '{}')); } catch { r({}); } });
 });
-</script></body></html>`;
+const send = (res, code, body, type = 'application/json') => {
+  res.writeHead(code, { 'Content-Type': type + '; charset=utf-8' });
+  res.end(typeof body === 'string' ? body : JSON.stringify(body));
+};
+const rnd = n => crypto.randomBytes(n).toString('hex').toUpperCase();
 
-http
-  .createServer(async (req, res) => {
-    if (req.method === "GET" && req.url === "/") {
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      return res.end(PAGE);
-    }
-    if (req.method === "POST" && req.url === "/api/redeem") {
-      const send = (obj, code = 200) => {
-        res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" });
-        res.end(JSON.stringify(obj));
-      };
-      const ip = req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
-      if (limited(ip)) return send({ ok: false, message: "ลองบ่อยเกินไป รอสักครู่" }, 429);
-      let body = "";
-      for await (const chunk of req) {
-        body += chunk;
-        if (body.length > 5000) return send({ ok: false, message: "ข้อมูลใหญ่เกินไป" }, 413);
+http.createServer(async (req, res) => {
+  const url = new URL(req.url, 'http://x');
+  const p = url.pathname;
+
+  if (p === '/' || p === '/admin')
+    return send(res, 200, fs.readFileSync('./admin.html', 'utf8'), 'text/html');
+
+  if (p === '/loader.lua') {
+    const base = process.env.BASE_URL || 'https://' + req.headers.host;
+    return send(res, 200,
+`local key = tostring(getgenv().Key or "")
+local function getHWID()
+    local ok, v = pcall(function() return gethwid and gethwid() end)
+    if ok and v then return tostring(v) end
+    return game:GetService("RbxAnalyticsService"):GetClientId()
+end
+local HttpService = game:GetService("HttpService")
+local uid, pname = 0, ""
+pcall(function() uid = game:GetService("Players").LocalPlayer.UserId end)
+pcall(function() pname = game:GetService("Players").LocalPlayer.Name end)
+local ok, src = pcall(function()
+    return game:HttpGet("${base}/api/script?key=" .. HttpService:UrlEncode(key) .. "&hwid=" .. HttpService:UrlEncode(getHWID()) .. "&uid=" .. tostring(uid) .. "&name=" .. HttpService:UrlEncode(pname))
+end)
+if ok and src then
+    loadstring(src)()
+else
+    warn("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้")
+end
+`, 'text/plain');
+  }
+
+  if (p === '/api/script') {
+    if (limited(getIP(req))) return send(res, 200, 'warn("ส่งคำขอถี่เกินไป รอสักครู่")', 'text/plain');
+    const k = (url.searchParams.get('key') || '').toUpperCase();
+    const hwid = (url.searchParams.get('hwid') || '').trim();
+    const uid = cleanUid(url.searchParams.get('uid') || '');
+    const name = cleanId(url.searchParams.get('name') || ''); // ชื่อ @ ของผู้เล่น (ตัวพิมพ์เล็ก)
+    const rec = db.keys[k];
+    // ไอดีที่ถูกแบนทั้งระบบ
+    if ((uid || name) && db.blacklist.some(b => b.id === uid || b.id === name)) { log('block', k.slice(0, 30) || '-', 'ไอดี ' + (name ? '@' + name : uid) + ' อยู่ในแบล็กลิสต์ ถูกปฏิเสธ'); return send(res, 200, 'warn("ไอดีนี้ถูกระงับการใช้งาน")', 'text/plain'); }
+    if (!valid(k)) { log('fail', k.slice(0, 30) || '-', 'คีย์ผิดหรือหมดอายุ'); return send(res, 200, 'warn("คีย์ไม่ถูกต้องหรือหมดอายุ")', 'text/plain'); }
+    if (rec.banned) { log('ban', k, 'คีย์ที่ถูกระงับพยายามใช้'); return send(res, 200, 'warn("คีย์นี้ถูกระงับ")', 'text/plain'); }
+    // รายชื่อไอดีโรบอค (@ชื่อ) ที่ใช้คีย์นี้ได้ — ตรวจด้วยชื่อ หรือ UserID
+    const wl = rec.ids || [];
+    const me = [name, uid].filter(Boolean);
+    if (wl.length && !me.some(x => wl.includes(x))) { log('hwid', k, 'ไอดี ' + (name ? '@' + name : uid || '-') + ' ไม่อยู่ในรายการที่อนุญาต ถูกปฏิเสธ'); return send(res, 200, 'warn("ไอดีโรบอคนี้ไม่ได้รับอนุญาตใช้คีย์นี้")', 'text/plain'); }
+    if (BIND === 'uid') {
+      // โหมดชื่อ: คนแรกที่ใช้จะถูกเพิ่มเข้ารายการอัตโนมัติ แอดมินเพิ่มคนอื่นเองได้ภายหลัง
+      if (!wl.length) {
+        if (!me.length) return send(res, 200, 'warn("อ่านข้อมูลบัญชีไม่ได้")', 'text/plain');
+        if (rec.hwid && uid && rec.hwid !== uid) { log('hwid', k, 'ไอดี ' + uid + ' ไม่ตรง ถูกปฏิเสธ'); return send(res, 200, 'warn("คีย์นี้ผูกกับ' + LBL + 'อื่นแล้ว")', 'text/plain'); }
+        rec.ids = [name || uid]; if (uid) rec.hwid = uid;
+        log('bind', k, 'ผูก ' + (name ? '@' + name : uid) + ' ครั้งแรก');
       }
-      let link;
-      try { link = JSON.parse(body).link; } catch { return send({ ok: false, message: "ข้อมูลไม่ถูกต้อง" }, 400); }
-      const code = extractCode(link);
-      if (!code) return send({ ok: false, message: "ลิงก์ซองไม่ถูกต้อง" });
-      try {
-        const result = await redeem(code);
-        if (result.ok) fs.appendFile(LOG_FILE, JSON.stringify({ t: new Date().toISOString(), code, amount: result.amount, from: result.from }) + "\n", () => {});
-        return send(result);
-      } catch {
-        return send({ ok: false, message: "เชื่อมต่อ TrueMoney ไม่ได้ ลองใหม่อีกครั้ง" }, 502);
-      }
+    } else {
+      const id = BIND === 'hwid' ? hwid : getIP(req);
+      if (!id) return send(res, 200, 'warn("อ่านข้อมูลบัญชีไม่ได้")', 'text/plain');
+      if (!rec.hwid) { rec.hwid = id; log('bind', k, 'ผูก ' + LBL + ' ' + id + ' ครั้งแรก'); }
+      else if (rec.hwid !== id) { log('hwid', k, LBL + ' ' + id + ' ไม่ตรง ถูกปฏิเสธ'); return send(res, 200, 'warn("คีย์นี้ผูกกับ' + LBL + 'อื่นแล้ว")', 'text/plain'); }
     }
-    res.writeHead(404);
-    res.end("Not found");
-  })
-  .listen(PORT, () => console.log(`เปิดที่ http://localhost:${PORT}  (รับเงินเข้าเบอร์ ${masked})`));
+    // เริ่มนับเวลาตอนใช้งานสำเร็จครั้งแรก (คีย์ถาวรไม่ต้องนับ)
+    if (!rec.perm && !rec.exp) { rec.exp = Date.now() + (rec.dur || 1) * 60000; log('start', k, 'เริ่มนับเวลา'); }
+    rec.uses = (rec.uses || 0) + 1; rec.last = Date.now(); if (uid) rec.lastUid = uid; if (name) rec.lastName = name;
+    log('use', k, 'โหลดสคริปต์' + (name ? ' (@' + name + ')' : ''));
+    return send(res, 200, db.script, 'text/plain');
+  }
+
+  if (p.startsWith('/admin/api/')) {
+    if (req.headers['x-admin'] !== ADMIN) return send(res, 401, { error: 'รหัสไม่ถูกต้อง' });
+
+    if (p === '/admin/api/list') {
+      const keys = Object.entries(db.keys).map(([k, v]) => ({ key: k, exp: v.exp || null, perm: !!v.perm, dur: v.dur || 0, created: v.created || 0, hwid: v.hwid || null, note: v.note || '', banned: !!v.banned, uses: v.uses || 0, last: v.last || 0, ids: v.ids || [], lastUid: v.lastUid || '', lastName: v.lastName || '' })).sort((a, b) => b.created - a.created);
+      return send(res, 200, { keys, script: db.script, logs: db.logs, blacklist: db.blacklist, bind: BIND, webhook: !!WEBHOOK });
+    }
+    if (p === '/admin/api/create') {
+      const b = await readBody(req);
+      const name = String(b.name || 'KEY').toUpperCase().replace(/[^A-Z0-9-]/g, '').replace(/^-+|-+$/g, '') || 'KEY';
+      const perm = !!b.perm;
+      const mins = Math.max(1, Math.floor(Number(b.minutes) || 1));
+      const count = Math.min(50, Math.max(1, Math.floor(Number(b.count) || 1)));
+      const note = String(b.note || '').slice(0, 60);
+      const ids = parseIds(b.ids);
+      const made = [];
+      for (let i = 0; i < count; i++) {
+        const key = `${name}-${rnd(2)}-${rnd(2)}`;
+        db.keys[key] = perm
+          ? { perm: true, exp: null, dur: 0, created: Date.now(), hwid: null, note, uses: 0, ids: [...ids] }
+          : { perm: false, exp: null, dur: mins, created: Date.now(), hwid: null, note, uses: 0, ids: [...ids] };
+        made.push(key);
+      }
+      log('create', made[0], `สร้าง ${count} คีย์ (${perm ? 'ถาวร' : mins + ' นาที เริ่มนับเมื่อใช้งาน'})` + (ids.length ? ' ล็อกไอดี ' + ids.map(i => '@' + i).join(',') : ''));
+      return send(res, 200, { keys: made });
+    }
+    if (p === '/admin/api/extend') {
+      const b = await readBody(req);
+      const r = db.keys[b.key];
+      if (r && !r.perm) {
+        const add = Math.max(1, Number(b.minutes) || 0);
+        if (r.exp) r.exp += add * 60000; else r.dur = (r.dur || 0) + add; // ยังไม่เริ่มนับ → เพิ่มที่ระยะเวลา
+        save();
+      }
+      return send(res, 200, { ok: true });
+    }
+    if (p === '/admin/api/ban') {
+      const b = await readBody(req);
+      if (db.keys[b.key]) { db.keys[b.key].banned = !db.keys[b.key].banned; save(); }
+      return send(res, 200, { ok: true });
+    }
+    if (p === '/admin/api/reset') {
+      const b = await readBody(req);
+      if (db.keys[b.key]) { db.keys[b.key].hwid = null; save(); }
+      return send(res, 200, { ok: true });
+    }
+    if (p === '/admin/api/delete') {
+      const b = await readBody(req);
+      delete db.keys[b.key]; save();
+      return send(res, 200, { ok: true });
+    }
+    // เพิ่มไอดีโรบอคให้คีย์ (รับหลายไอดี คั่นด้วย , หรือเว้นวรรค)
+    if (p === '/admin/api/addid') {
+      const b = await readBody(req);
+      const r = db.keys[b.key], add = parseIds(b.id);
+      if (!r) return send(res, 200, { ok: false, error: 'ไม่พบคีย์' });
+      if (!add.length) return send(res, 200, { ok: false, error: 'ชื่อโรบอคไม่ถูกต้อง (a-z 0-9 _ ยาว 3-20 ตัว)' });
+      r.ids = r.ids || [];
+      // คีย์ที่ผูกไว้แล้วแต่ยังไม่มีรายการ (ข้อมูลเก่า) → เก็บไอดีเดิมเข้ารายการก่อน จะได้ไม่หลุด
+      if (BIND === 'uid' && !r.ids.length && r.hwid) r.ids.push(r.hwid);
+      for (const i of add) if (!r.ids.includes(i) && r.ids.length < 20) r.ids.push(i);
+      save(); log('addid', b.key, 'เพิ่มไอดี ' + add.map(i => '@' + i).join(','));
+      return send(res, 200, { ok: true });
+    }
+    if (p === '/admin/api/rmid') {
+      const b = await readBody(req);
+      const r = db.keys[b.key];
+      if (r) { r.ids = (r.ids || []).filter(i => i !== String(b.id)); save(); log('addid', b.key, 'ลบไอดี @' + b.id); }
+      return send(res, 200, { ok: true });
+    }
+    if (p === '/admin/api/note') {
+      const b = await readBody(req);
+      if (db.keys[b.key]) { db.keys[b.key].note = String(b.note || '').slice(0, 60); save(); }
+      return send(res, 200, { ok: true });
+    }
+    // แบล็กลิสต์ไอดีโรบอค (ใช้ได้ทุกคีย์)
+    if (p === '/admin/api/blacklist') {
+      const b = await readBody(req);
+      if (b.remove) { const rid = cleanId(b.id) || String(b.id).trim(); db.blacklist = db.blacklist.filter(x => x.id !== rid && x.id !== String(b.id)); save(); log('block', 'BLACKLIST', 'ปลดแบนไอดี ' + b.id); return send(res, 200, { ok: true }); }
+      const add = parseIds(b.id);
+      if (!add.length) return send(res, 200, { ok: false, error: 'ชื่อโรบอคไม่ถูกต้อง (a-z 0-9 _ ยาว 3-20 ตัว)' });
+      const why = String(b.reason || '').slice(0, 60);
+      for (const i of add) if (!db.blacklist.some(x => x.id === i)) db.blacklist.unshift({ id: i, reason: why, t: Date.now() });
+      save(); log('block', 'BLACKLIST', 'แบนไอดี ' + add.join(',') + (why ? ' (' + why + ')' : ''));
+      return send(res, 200, { ok: true });
+    }
+    if (p === '/admin/api/script') {
+      const b = await readBody(req);
+      db.script = String(b.script || ''); save();
+      return send(res, 200, { ok: true });
+    }
+    if (p === '/admin/api/clearlogs') { db.logs = []; save(); return send(res, 200, { ok: true }); }
+  }
+  send(res, 404, 'Not found', 'text/plain');
+}).listen(PORT, () => console.log('Running on port ' + PORT));
