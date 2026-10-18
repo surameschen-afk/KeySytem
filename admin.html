@@ -92,7 +92,8 @@ button:active{transform:scale(.96)}
 <button class="b" id="sv">บันทึกสคริปต์</button></div></div>
 
 <div class="pn" id="p-log"><div class="g"><div class="top"><h3>🧾 ประวัติ</h3><div class="dots"><button class="s gh" id="bk">💾 สำรอง</button><button class="s rd" id="clr">ล้าง</button></div></div>
-<small id="inf" style="color:var(--mu);display:block;margin-bottom:6px"></small><div id="logs"></div></div></div>
+<small id="inf" style="color:var(--mu);display:block;margin-bottom:6px"></small>
+<div class="row" style="margin-bottom:8px"><button class="s gh b" id="imp" style="margin-top:0">📥 นำเข้าไฟล์สำรอง</button><button class="s gh b" id="syn" style="margin-top:0">☁️ ซิงก์ตอนนี้</button></div><input type="file" id="impf" accept=".json,application/json" style="display:none"><div id="logs"></div></div></div>
 
 <div class="nav"><button class="on" data-t="gen">✨<br>สร้าง</button><button data-t="keys">📋<br>คีย์</button><button data-t="bl">🚫<br>แบนไอดี</button><button data-t="scr">📜<br>สคริปต์</button><button data-t="log">🧾<br>ประวัติ</button></div>
 </div>
@@ -127,7 +128,7 @@ function chk(m){return function(d){if(d&&d.ok===false){toast(d.error||"ผิด
 function load(){return api("list").then(function(d){D=d;$("login").style.display="none";$("app").style.display="block";
  if(first){$("script").value=d.script;cc();first=false}
  $("s1").textContent=d.keys.length;$("s2").textContent=d.keys.filter(function(k){return k.hwid||k.ids.length}).length;$("s3").textContent=d.keys.filter(function(k){return k.banned}).length;$("s4").textContent=d.keys.reduce(function(a,k){return a+k.uses},0);
- $("inf").textContent="โหมดผูก: "+({uid:"ชื่อโรบอค",ip:"IP",hwid:"HWID"}[d.bind]||d.bind)+" · Webhook: "+(d.webhook?"เปิด":"ปิด");
+ $("inf").textContent="โหมดผูก: "+({uid:"ชื่อโรบอค",ip:"IP",hwid:"HWID"}[d.bind]||d.bind)+" · Webhook: "+(d.webhook?"เปิด":"ปิด")+" · ดิสก์: "+((d.sync||{}).disk?"ถาวร ✓":"ชั่วคราว ⚠️")+" · สำรอง Gist: "+((d.sync||{}).gist?((d.sync.err?"ผิดพลาด ("+d.sync.err+")":(d.sync.last?"ซิงก์ล่าสุด "+new Date(d.sync.last).toLocaleTimeString("th-TH"):"รอซิงก์"))):"ปิด");
  renderList();fillNotes();renderBl();renderLogs()}).catch(function(e){if(!D){$("login").firstChild.classList.add("shake");setTimeout(function(){$("login").firstChild.classList.remove("shake")},500);toast(e.message,"er")}})}
 function shown(){var q=$("q").value.toLowerCase(),f=$("f").value;return D.keys.filter(function(k){if(q&&(k.key.toLowerCase().indexOf(q)<0&&k.note.toLowerCase().indexOf(q)<0&&k.ids.join(" ").indexOf(q)<0&&String(k.hwid||"").toLowerCase().indexOf(q)<0))return false;if(f==="free")return!k.hwid&&!k.ids.length;if(f==="bound")return!!k.hwid||k.ids.length>0;if(f==="ban")return k.banned;if(f==="noid")return!k.ids.length;return true})}
 function timeTxt(k){if(k.perm)return'♾️ ถาวร';if(!k.exp)return'⏸ ยังไม่เริ่มนับ ('+fmt(k.dur*60000).replace(/ \d+ว$/,"")+')';return'⏳ <span class="cd" data-e="'+k.exp+'"></span>'}
@@ -182,5 +183,8 @@ $("script").oninput=cc;
 $("sv").onclick=function(){sfx.click();api("script",{script:$("script").value}).then(function(){toast("บันทึกสคริปต์แล้ว","ok")}).catch(function(e){toast(e.message,"er")})};
 $("clr").onclick=function(){if(confirm("ล้างประวัติทั้งหมด?"))api("clearlogs",{}).then(function(){toast("ล้างแล้ว","ok");load()})};
 $("bk").onclick=function(){if(!D)return;var blob=new Blob([JSON.stringify({keys:D.keys,blacklist:D.blacklist,script:D.script},null,1)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="keys-backup-"+new Date().toISOString().slice(0,10)+".json";a.click();toast("ดาวน์โหลดไฟล์สำรองแล้ว","ok")};
+$("imp").onclick=function(){$("impf").click()};
+$("impf").onchange=function(){var f=this.files[0];if(!f)return;var inp=this,r=new FileReader();r.onload=function(){var j;try{j=JSON.parse(r.result)}catch(e){toast("ไฟล์ไม่ถูกต้อง","er");return}if(!confirm("นำเข้าข้อมูลจากไฟล์นี้? (คีย์ที่ชื่อซ้ำจะถูกทับ)"))return;api("import",j).then(function(d){if(d.ok===false){toast(d.error||"ผิดพลาด","er");return}toast("นำเข้า "+d.n+" คีย์แล้ว","ok");load()}).catch(function(e){toast(e.message,"er")})};r.readAsText(f);inp.value=""};
+$("syn").onclick=function(){sfx.click();api("syncnow",{}).then(function(d){if(d.ok===false){toast(d.error||"ซิงก์ไม่สำเร็จ","er");return}toast("ซิงก์ขึ้น Gist แล้ว","ok");load()}).catch(function(e){toast(e.message,"er")})};
 if(PW)load();
 </script></body></html>
